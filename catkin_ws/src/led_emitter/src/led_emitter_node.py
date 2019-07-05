@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+from math import floor
 import rospy
 from rgb_led import *
 import sys
@@ -13,7 +14,8 @@ class LEDEmitter(object):
         self.led = RGB_LED()
         self.node_name = rospy.get_name()
         self.active = True
-        self.pattern = [[0,0,0]]*5
+        self.num_leds = 5
+        self.pattern = [[0,0,0]] * self.num_leds
         self.current_pattern_name = 'OFF'
         self.changePattern_(self.current_pattern_name)
 
@@ -34,6 +36,7 @@ class LEDEmitter(object):
 
         # Subscribe
         self.sub_pattern = rospy.Subscriber("~change_color_pattern",String,self.changePattern)
+        self.sub_color = rospy.Subscriber("~change_color", String, self.changeColor)
         self.sub_switch = rospy.Subscriber("~switch",BoolStamped,self.cbSwitch)
 
         # Scale intensity of the LEDs
@@ -63,6 +66,37 @@ class LEDEmitter(object):
                     self.led.setRGB(i,[self.pattern[i][0],self.pattern[i][1],self.pattern[i][2]])
                 self.is_on = True
 
+    def changeColor(self, led_msg):
+        self.changeColor_(led_msg)
+
+    def changeColor_(self, led_msg):
+        led_colors = led_msg.data.split(',')
+
+        if len(led_colors) != self.num_leds * 3:
+            return
+
+        pattern_name = 'ON_COLOR'
+        self.current_pattern_name = pattern_name
+
+        for i in range(self.num_leds * 3):
+            k = int(floor(i / 3))
+            j = i % 3
+            self.pattern[k][j] = led_colors[i]
+
+        # Change frequency (frequency does not change)
+        self.cycle = 4.0
+        self.changeFrequency()
+
+        # Change LEDs
+        if not self.onOff:
+            self.cycleTimer([])
+
+        # Loginfo
+        rospy.loginfo('[%s] Pattern changed to (%r), cycle: %s ' % (self.node_name, pattern_name, self.cycle))
+
+        # Publish current pattern
+        self.pub_state.publish(self.current_pattern_name)
+
     def changePattern(self, msg):
         self.changePattern_(msg.data)
 
@@ -75,13 +109,13 @@ class LEDEmitter(object):
 
             # With joystick
             if self.current_pattern_name == 'ON_WHITE':
-                self.pattern = [self.protocol['colors']['white']]*5
+                self.pattern = [self.protocol['colors']['white']] * self.num_leds
             elif self.current_pattern_name == 'ON_RED':
-                self.pattern = [self.protocol['colors']['red']]*5
+                self.pattern = [self.protocol['colors']['red']] * self.num_leds
             elif self.current_pattern_name == 'ON_BLUE':
-                self.pattern = [self.protocol['colors']['blue']]*5
+                self.pattern = [self.protocol['colors']['blue']] * self.num_leds
             elif self.current_pattern_name == 'ON_GREEN':
-                self.pattern = [self.protocol['colors']['green']]*5
+                self.pattern = [self.protocol['colors']['green']] * self.num_leds
             elif self.current_pattern_name == 'CAR_SIGNAL_A':
                 self.current_pattern_name = CoordinationSignal.SIGNAL_A
 
@@ -90,17 +124,17 @@ class LEDEmitter(object):
             elif self.current_pattern_name == 'OFF':
                 self.current_pattern_name = CoordinationSignal.OFF
             else:
-                self.pattern = [self.protocol['colors']['black']]*5
+                self.pattern = [self.protocol['colors']['black']] * self.num_leds
 
             # With coordination (new)
             if self.current_pattern_name == CoordinationSignal.SIGNAL_GREEN:
-		color        = self.protocol['signals'][pattern_name]['color']
-                self.pattern = [self.protocol['colors'][color]]*5
+                color = self.protocol['signals'][pattern_name]['color']
+                self.pattern = [self.protocol['colors'][color]] * self.num_leds
             elif self.current_pattern_name == CoordinationSignal.OFF:
-                self.pattern = [self.protocol['colors']['black']]*5
+                self.pattern = [self.protocol['colors']['black']] * self.num_leds
             else:
                 color           = self.protocol['signals'][pattern_name]['color']
-                self.pattern    = [self.protocol['colors']['black']]*5
+                self.pattern    = [self.protocol['colors']['black']] * self.num_leds
                 self.pattern[2] = self.protocol['colors'][color]
                 self.pattern[0] = self.protocol['colors'][color]
                 self.pattern[4] = self.protocol['colors'][color]
